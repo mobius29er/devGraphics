@@ -472,9 +472,25 @@ class TestQueueVisibility(unittest.TestCase):
 
     def test_the_message_says_what_a_stuck_queue_means(self):
         seen = []
-        self.client()._queued({"rank": 0, "queue_size": 1}, seen.append)
+        self.client()._queued({"rank": 3, "queue_size": 4}, seen.append)
         self.assertIn("stalled", seen[0]["message"],
                       "a queue that never moves must not read as normal waiting")
+
+    def test_being_next_in_line_is_silent(self):
+        """rank 0 is every healthy render.
+
+        Measured on a live install: with this reported, a clean two-icon run
+        printed four queue lines warning about a stall that was not happening,
+        once for get_task and once for generate_clicked on each icon. Position is
+        only worth saying when something is actually ahead of us -- which is also
+        what the real jam looked like, at rank 2 of 3.
+        """
+        seen = []
+        client = self.client()
+        client._queued({"rank": 0, "queue_size": 1, "rank_eta": 7.0}, seen.append)
+        self.assertEqual(seen, [])
+        # Still recorded, so a caller can read it even when nothing is printed.
+        self.assertEqual(client.queue_position, (0, 1))
 
     def test_an_unchanged_position_is_not_repeated(self):
         """Gradio re-sends estimation frequently; 900 identical lines is noise."""
@@ -487,10 +503,11 @@ class TestQueueVisibility(unittest.TestCase):
     def test_movement_up_the_queue_is_reported(self):
         seen = []
         client = self.client()
+        client._queued({"rank": 3, "queue_size": 4}, seen.append)
         client._queued({"rank": 2, "queue_size": 3}, seen.append)
         client._queued({"rank": 1, "queue_size": 2}, seen.append)
         client._queued({"rank": 0, "queue_size": 1}, seen.append)
-        self.assertEqual(len(seen), 3)
+        self.assertEqual(len(seen), 3, "three waits reported, arrival is silent")
         self.assertEqual(client.queue_position, (0, 1))
 
     def test_a_frame_without_a_rank_is_ignored(self):

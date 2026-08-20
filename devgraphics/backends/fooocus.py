@@ -177,7 +177,12 @@ class Fooocus:
         if rank is None:
             return
         self.queue_position = (rank, size)
-        if self._reported_rank == rank:
+        # rank 0 means nobody is ahead of us, which is every healthy render and
+        # therefore not worth a line -- saying it twice per icon (get_task and
+        # generate_clicked each get their own frame) buries the case that
+        # matters. Only genuine waiting is reported, and that is also the shape
+        # a jammed queue takes: the measured stall sat at rank 2 of 3.
+        if rank <= 0 or self._reported_rank == rank:
             return
         self._reported_rank = rank
         eta = msg.get("rank_eta")
