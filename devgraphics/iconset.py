@@ -79,20 +79,33 @@ def advisory_model(profile):
     return None
 
 
-def plan(subjects, outdir, profile, force=False):
+def plan(subjects, outdir, profile, force=False, only=()):
     """What a run would do, without doing any of it.
 
     Returns a dict with the four buckets that matter for both the dry run and the
     real one: what is already finished, what was hand-authored and must never be
     regenerated, what is left, and what that will cost.
+
+    `only` narrows the run to named slugs and re-renders them whether or not they
+    already exist. That is the iteration loop: a diffusion model gets some
+    subjects wrong on the first pass, and the fix is a better prompt fragment for
+    those subjects, not another twenty minutes for the whole set.
     """
+    only = tuple(only or ())
+    unknown = [slug for slug in only if slug not in subjects]
+    if unknown:
+        raise SetError("no such subject in the manifest: %s; it has: %s"
+                       % (", ".join(unknown), ", ".join(sorted(subjects))))
+
     lock = lockfile.read(outdir)
     hand = lockfile.hand_slugs(lock) if lock else set()
     cached, todo = [], []
     for slug in subjects:
         if slug in hand:
             continue
-        if not force and os.path.exists(_icon_path(outdir, slug)):
+        if only:
+            (todo if slug in only else cached).append(slug)
+        elif not force and os.path.exists(_icon_path(outdir, slug)):
             cached.append(slug)
         else:
             todo.append(slug)
@@ -125,7 +138,7 @@ def waivers(caps, profile, strict=True):
 
 def generate(subjects, outdir, size=None, seed=None, host=None, profile=None,
              backend=None, force=False, allow_drift=False, write_lock=True,
-             log=print):
+             only=(), log=print):
     """subjects: {slug: prompt-fragment}. Returns {slug: png path}.
 
     The 0.1 signature still works -- generate(subjects, outdir, size=128,
@@ -137,7 +150,7 @@ def generate(subjects, outdir, size=None, seed=None, host=None, profile=None,
     outdir = str(outdir)
     made = {}
 
-    work = plan(subjects, outdir, profile, force=force)
+    work = plan(subjects, outdir, profile, force=force, only=only)
     backend_obj = build(profile)
     caps = backend_obj.capabilities
 
