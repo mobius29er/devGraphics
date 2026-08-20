@@ -1,0 +1,4 @@
+# Renders the Sponsor button on the repository.
+# `github` takes a list; every other platform takes a single username.
+github: [mobius29er]
+ko_fi: cruxway
