@@ -14,8 +14,6 @@ hand-authored one (~29 KB vs ~1 KB), and its many-coloured paths cannot inherit
 `currentColor`. Ship them as files, not inlined, and do not expect CSS theming.
 """
 
-import vtracer
-
 PRESETS = {
     # detail-preserving; large. Use for hero art, not icons.
     "fine": dict(filter_speckle=4, color_precision=8, path_precision=8, corner_threshold=60),
@@ -27,8 +25,19 @@ PRESETS = {
 
 
 def to_svg(src, dest, preset="flat", mode="spline"):
-    """Trace `src` (PNG, ideally full-resolution with alpha) into an SVG."""
+    """Trace `src` (PNG, ideally full-resolution with alpha) into an SVG.
+
+    vtracer is imported here rather than at module scope: it is the one Rust wheel
+    in the dependency list, and someone generating PNGs on a machine where it will
+    not build should not be unable to `import devgraphics` at all.
+    """
     if preset not in PRESETS:
         raise ValueError("unknown preset %r; choose from %s" % (preset, sorted(PRESETS)))
+    try:
+        import vtracer
+    except ImportError as exc:
+        raise ImportError(
+            "SVG tracing needs the vtracer wheel, which is not installed.\n"
+            "  pip install vtracer     (or drop --svg to write PNG only)") from exc
     vtracer.convert_image_to_svg_py(src, dest, colormode="color", mode=mode, **PRESETS[preset])
     return dest

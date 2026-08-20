@@ -7,7 +7,7 @@ so the next set doesn't relearn it.
 ## Timing
 
 | Stage | Cost |
-|---|---|
+| --- | --- |
 | Generation, 1024×1024, Speed | 13–15 s |
 | Background cutout (PIL flood fill, 1 MP) | ~2.7 s |
 | Vectorise (vtracer, `flat`) | ~0.1 s |
@@ -20,7 +20,7 @@ resumable — existing outputs are skipped — so an interrupted run costs nothi
 Six diverse subjects, identical scaffold, fixed seed 77777:
 
 | Subject | Prompt fragment | Result |
-|---|---|---|
+| --- | --- | --- |
 | flame | `a flame` | Good |
 | target | `a bullseye target with an arrow in it` | Good |
 | chart | `a bar chart with three ascending bars` | Good |
@@ -42,7 +42,7 @@ subset is small by variety and large by volume.
 ## Style selection is counter-intuitive
 
 | Styles | Background | Verdict |
-|---|---|---|
+| --- | --- | --- |
 | `Fooocus V2` + `Fooocus Sharp` | Near-flat dark charcoal | **Best.** Keys out cleanly. |
 | `Fooocus V2` + `Sticker Designs` | Heavy asphalt texture | Defeats flood fill |
 | `Simple Vector Art` | Heavy asphalt texture | Defeats flood fill |
@@ -83,7 +83,7 @@ worth flagging — it usually indicates the model ignored "single centered objec
 vtracer presets on one traced icon:
 
 | Preset | Size | Paths |
-|---|---|---|
+| --- | --- | --- |
 | `fine` | 385.5 KB | 670 |
 | `smooth` | 49.4 KB | 34 |
 | `flat` | 29.0 KB | 18 |
