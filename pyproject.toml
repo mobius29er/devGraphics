@@ -1,19 +1,54 @@
 [build-system]
-requires = ["setuptools>=68"]
+# 77 is the floor for the PEP 639 SPDX `license` string and `license-files`.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "devgraphics"
-version = "0.1.0"
-description = "Production-ready graphics from a local diffusion install, at zero marginal cost."
+version = "0.2.0"
+description = "A consistent asset set for your app, from the image generator of your choice."
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.9"
+authors = [{ name = "mobius29er" }]
+keywords = [
+    "icons", "icon-set", "image-generation", "diffusion", "sdxl",
+    "stable-diffusion", "comfyui", "fooocus", "invokeai", "automatic1111",
+    "openai", "gemini", "svg", "design-system", "assets", "cli",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Multimedia :: Graphics :: Graphics Conversion",
+    "Topic :: Software Development :: Build Tools",
+]
+# No "Typing :: Typed": only backends/base.py carries annotations, and there is
+# no py.typed marker, so claiming it would be a lie a type checker acts on.
+
+# Seven backends, zero new dependencies. Every hosted backend is stdlib urllib and
+# base64; websocket-client drives Fooocus and ComfyUI; vtracer is only reached by
+# --svg and is imported lazily, so a machine where the Rust wheel will not build
+# can still generate PNGs. tomli disappears on 3.11+, where tomllib is stdlib.
 dependencies = [
     "websocket-client>=1.7",
     "pillow>=10",
     "vtracer>=0.6",
+    "tomli>=1.1.0; python_version < '3.11'",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
 
 [project.urls]
 Homepage = "https://github.com/mobius29er/devGraphics"
@@ -21,5 +56,12 @@ Homepage = "https://github.com/mobius29er/devGraphics"
 [project.scripts]
 devgraphics = "devgraphics.cli:main"
 
+# Third-party backends register here; see docs/backends.md. A dotted
+# "module:Class" path passed to --backend works without any packaging at all.
+[project.entry-points."devgraphics.backends"]
+
 [tool.setuptools.packages.find]
 include = ["devgraphics*"]
+
+[tool.setuptools.package-data]
+devgraphics = ["workflows/*.json"]

@@ -17,18 +17,31 @@ fragments per image, showing up as grey smudges around the icon. Keeping only th
 connected components that are a meaningful fraction of the largest one clears them
 regardless of colour, which chasing the threshold never did.
 
+This is also the layer that makes six different backends interchangeable. Only
+one hosted API returns real alpha and no local SDXL install returns any; keying
+the backdrop out here is what lets the rest of the pipeline stop caring which
+generator produced the pixels.
+
 PIL only, no numpy: keeps the tool dependency-light and OS-agnostic.
 """
 
+import io
 from collections import deque
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, UnidentifiedImageError
+
+from .backends.base import BackendError
 
 SENTINEL = (255, 0, 255)
+PNG_MAGIC = bytes((0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A))
 
 
 def cutout(path, thresh=42, seeds=48):
-    """Flood-fill the backdrop away; return (RGBA image, background share)."""
+    """Flood-fill the backdrop away; return (RGBA image, background share).
+
+    `path` may be a filename or any file-like object, so a backend's bytes can go
+    straight in without a temp file.
+    """
     im = Image.open(path).convert("RGB")
     w, h = im.size
 
@@ -118,12 +131,92 @@ def trim_square(im, pad_ratio=0.06):
     return canvas
 
 
-def render(src, dest, size=128, thresh=42, despeckle=True):
+def render(src, dest, size=128, thresh=42, despeckle=True, keep_frac=0.15,
+           pad_ratio=0.06):
     """Full path: key the backdrop, drop speckle, trim, square up, downscale."""
     im, ratio = cutout(src, thresh=thresh)
     if despeckle:
-        im, _dropped = keep_subject(im)
-    im = trim_square(im)
+        im, _dropped = keep_subject(im, keep_frac=keep_frac)
+    im = trim_square(im, pad_ratio=pad_ratio)
     im = im.resize((size, size), Image.LANCZOS)
     im.save(dest, "PNG", optimize=True)
     return ratio, im
+
+
+# --- bytes in, bytes out ------------------------------------------------
+#
+# Backends hand back bytes rather than paths, because a hosted API has no
+# filesystem to point at. These three are the seam between that contract and
+# everything above, which was written path-first.
+
+def to_png(data):
+    """Normalise arbitrary image bytes to PNG.
+
+    The backend contract is PNG specifically, and not for tidiness: cutout()
+    flood-fills against the backdrop, and JPEG ringing around a hard outline is
+    exactly the signal thresh=42 keys on. Gemini's response mime type enum offers
+    JPEG only, so its backend has to come through here.
+    """
+    if data[:8] == PNG_MAGIC:
+        return data
+    buf = io.BytesIO()
+    try:
+        Image.open(io.BytesIO(data)).save(buf, "PNG")
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        # Every backend's generate() funnels its response through here, and the
+        # contract in backends/base.py is that a failure arrives as BackendError.
+        # A truncated download or an HTML error page served as image bytes would
+        # otherwise escape that hierarchy and kill a whole batch instead of one
+        # icon.
+        raise BackendError(
+            "response is not a decodable image (%d bytes, starts %r): %s"
+            % (len(data), data[:16], exc)) from exc
+    return buf.getvalue()
+
+
+def has_alpha(data, min_share=0.01):
+    """True if these bytes carry a meaningful transparent region.
+
+    A provider that accepts a transparent-background request and returns opaque
+    white is a documented-but-unmeasured risk, so the caller verifies rather than
+    trusts. `min_share` guards against an image that is merely antialiased at the
+    edges.
+    """
+    im = Image.open(io.BytesIO(data))
+    if im.mode not in ("RGBA", "LA", "PA") and "transparency" not in im.info:
+        return False
+    return _alpha_share(data) >= min_share
+
+
+def render_bytes(data, dest, size=128, thresh=42, despeckle=True, keep_frac=0.15,
+                 pad_ratio=0.06, cutout_bg=None):
+    """render(), starting from bytes rather than a path.
+
+    `cutout_bg` None means decide: bytes that already carry alpha skip the flood
+    fill entirely, which is the whole point of a backend that can emit RGBA. True
+    forces the fill, False forbids it.
+
+    The returned ratio is the transparent share either way, so the drift audit
+    and the "subject fills the frame" warning read the same number regardless of
+    which backend produced the image.
+    """
+    png = to_png(data)
+    keyed = has_alpha(png) if cutout_bg is None else not cutout_bg
+    if keyed:
+        im = Image.open(io.BytesIO(png)).convert("RGBA")
+        ratio = _alpha_share(png)
+    else:
+        im, ratio = cutout(io.BytesIO(png), thresh=thresh)
+    if despeckle:
+        im, _dropped = keep_subject(im, keep_frac=keep_frac)
+    im = trim_square(im, pad_ratio=pad_ratio)
+    im = im.resize((size, size), Image.LANCZOS)
+    im.save(dest, "PNG", optimize=True)
+    return ratio, im
+
+
+def _alpha_share(data):
+    im = Image.open(io.BytesIO(data)).convert("RGBA")
+    hist = im.split()[3].histogram()
+    clear = sum(hist[:16])
+    return clear / float(im.size[0] * im.size[1])
