@@ -21,12 +21,15 @@ Two properties matter and they pull in opposite directions:
   install. A stub that silently no-ops would be worse than an ImportError.
 """
 
+import contextlib
 import importlib
 import sys
 import unittest
 from unittest import mock
 
 from devgraphics.backends.base import MissingDependency
+
+HAVE_TOMLI = importlib.util.find_spec("tomli") is not None
 
 
 class Absent(object):
@@ -54,22 +57,43 @@ class Absent(object):
         return None
 
 
-def reload_without(module_name, absent):
-    """Re-import `module_name` as if `absent` were not installed.
+@contextlib.contextmanager
+def absent(*names):
+    """Make each named package unimportable for the duration of the block.
 
-    Returns the reloaded module. The caller must reload it again afterwards, or
-    every later test in the process sees the crippled version.
+    A context manager rather than a helper that wraps one reload, because the
+    imports being tested are not all at module scope. `to_svg` imports vtracer
+    *inside the function*, so blocking only during a reload proves nothing --
+    the finder is long gone by the time the call happens. CI caught exactly that:
+    the test passed here because vtracer is not installed on this machine, and
+    panicked on a runner where it is.
     """
-    module = importlib.import_module(module_name)   # normally, so reload has a target
-    finder = Absent(absent)
-    saved = dict(sys.modules)
-    sys.modules.pop(absent, None)
-    sys.meta_path.insert(0, finder)
+    finders = [Absent(n) for n in names]
+    removed = {}
+    for name in names:
+        for key in [k for k in list(sys.modules)
+                    if k == name or k.startswith(name + ".")]:
+            removed[key] = sys.modules.pop(key)
+    sys.meta_path[:0] = finders
     try:
-        return importlib.reload(module)
+        yield
     finally:
-        sys.meta_path.remove(finder)
-        sys.modules.update(saved)
+        for finder in finders:
+            sys.meta_path.remove(finder)
+        for name in names:
+            sys.modules.pop(name, None)
+        sys.modules.update(removed)
+
+
+def reload_without(module_name, missing):
+    """Re-import `module_name` as if `missing` were not installed.
+
+    The caller must reload it again afterwards, or every later test in the
+    process sees the crippled version. `Restoring` does that.
+    """
+    module = importlib.import_module(module_name)   # so reload has a target
+    with absent(missing):
+        return importlib.reload(module)
 
 
 class Restoring(unittest.TestCase):
@@ -129,6 +153,46 @@ class TestWithoutWebsocketClient(Restoring):
         except comfyui.WebSocketException:
             pass
 
+    def test_generate_refuses_before_it_touches_the_network(self):
+        """The deterministic failure has to beat the transient one.
+
+        generate() fetches /config over HTTP before it ever opens a socket, so
+        without an up-front guard a missing package surfaces as "cannot reach
+        127.0.0.1:7865: connection refused" and sends someone debugging a server
+        that was never the problem. CI found this on a real core-only install.
+        """
+        from devgraphics.backends.base import Request
+
+        for module, name in (("devgraphics.backends.fooocus", "fooocus"),
+                             ("devgraphics.backends.comfyui", "comfyui")):
+            with self.subTest(backend=name):
+                crippled = reload_without(module, "websocket")
+                backend = getattr(crippled, "FooocusBackend"
+                                  if name == "fooocus" else "ComfyUIBackend")()
+
+                def explode(*_a, **_k):
+                    raise AssertionError("%s reached the network before "
+                                         "reporting the missing package" % name)
+
+                with mock.patch.object(crippled, "request_json", explode):
+                    with self.assertRaises(MissingDependency) as caught:
+                        backend.generate(Request(prompt="a flame", seed=1))
+                self.assertIn("devgraphics[local]", str(caught.exception))
+
+    def test_probe_reports_the_missing_package_rather_than_the_host(self):
+        """Answering "up" on a machine that cannot open a socket is the wrong
+        kind of true."""
+        for module, name in (("devgraphics.backends.fooocus", "fooocus"),
+                             ("devgraphics.backends.comfyui", "comfyui")):
+            with self.subTest(backend=name):
+                crippled = reload_without(module, "websocket")
+                cls = getattr(crippled, "FooocusBackend"
+                              if name == "fooocus" else "ComfyUIBackend")
+                ok, message = cls.probe()
+                self.assertFalse(ok)
+                self.assertIn("websocket-client", message)
+                self.assertIn("devgraphics[local]", message)
+
     def test_a_hosted_backend_is_unaffected(self):
         """The whole reason for the split: no socket, no dependency."""
         reload_without("devgraphics.backends.fooocus", "websocket")
@@ -144,18 +208,28 @@ class TestWithoutVtracer(Restoring):
         self.assertIn("flat", vectorize.PRESETS)
 
     def test_to_svg_says_what_to_install(self):
-        vectorize = reload_without("devgraphics.vectorize", "vtracer")
-        with self.assertRaises(ImportError) as caught:
-            vectorize.to_svg("in.png", "out.svg")
+        """The block has to hold across the CALL: the import is inside to_svg."""
+        vectorize = importlib.import_module("devgraphics.vectorize")
+        with absent("vtracer"):
+            with self.assertRaises(ImportError) as caught:
+                vectorize.to_svg("in.png", "out.svg")
         message = str(caught.exception)
         self.assertIn("devgraphics[svg]", message)
         self.assertIn("--svg", message)
 
     def test_a_bad_preset_is_still_caught_before_the_import(self):
-        """Argument validation must not hide behind a missing dependency."""
-        vectorize = reload_without("devgraphics.vectorize", "vtracer")
+        """Argument validation must not hide behind a missing dependency.
+
+        Deliberately checked with vtracer present as well as absent: a caller who
+        typoed a preset deserves the same error either way, and it must arrive
+        before anything touches the filesystem.
+        """
+        vectorize = importlib.import_module("devgraphics.vectorize")
         with self.assertRaises(ValueError):
             vectorize.to_svg("in.png", "out.svg", preset="nonsense")
+        with absent("vtracer"):
+            with self.assertRaises(ValueError):
+                vectorize.to_svg("in.png", "out.svg", preset="nonsense")
 
 
 class TestWithoutTomllib(Restoring):
@@ -163,29 +237,29 @@ class TestWithoutTomllib(Restoring):
 
     MODULES = ("devgraphics.config",)
 
+    @unittest.skipUnless(HAVE_TOMLI, "tomli only installs below 3.11, by design")
     def test_it_falls_back_to_the_tomli_backport(self):
+        """Only meaningful where the backport is actually present.
+
+        On 3.11+ pyproject deliberately does not install tomli, so blocking
+        tomllib there leaves no parser at all -- which is the *next* test, not a
+        failure of this one. CI caught this: it passed here only because this
+        machine happens to have tomli sitting in its environment.
+        """
         config = reload_without("devgraphics.config", "tomllib")
         self.assertIsNotNone(
             config.tomllib,
-            "with tomllib absent, config must fall back to tomli")
+            "with tomllib absent and tomli installed, config must fall back")
+        self.assertEqual(config.tomllib.__name__, "tomli")
 
     def test_with_neither_parser_the_error_says_what_to_install(self):
         module = importlib.import_module("devgraphics.config")
-        finder_a, finder_b = Absent("tomllib"), Absent("tomli")
-        saved = dict(sys.modules)
-        for name in ("tomllib", "tomli"):
-            sys.modules.pop(name, None)
-        sys.meta_path[:0] = [finder_a, finder_b]
-        try:
+        with absent("tomllib", "tomli"):
             config = importlib.reload(module)
             self.assertIsNone(config.tomllib)
             with self.assertRaises(config.ConfigError) as caught:
                 config.load("devgraphics.toml")
             self.assertIn("tomli", str(caught.exception))
-        finally:
-            sys.meta_path.remove(finder_a)
-            sys.meta_path.remove(finder_b)
-            sys.modules.update(saved)
 
 
 class TestDeclaredExtras(unittest.TestCase):
