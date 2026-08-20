@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.env
+
+# generated artwork -- regenerate rather than commit
+out/
+raw/
+*.local.png

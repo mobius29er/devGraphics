@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "devgraphics"
+version = "0.1.0"
+description = "Production-ready graphics from a local diffusion install, at zero marginal cost."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+dependencies = [
+    "websocket-client>=1.7",
+    "pillow>=10",
+    "vtracer>=0.6",
+]
+
+[project.urls]
+Homepage = "https://github.com/mobius29er/devGraphics"
+
+[project.scripts]
+devgraphics = "devgraphics.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["devgraphics*"]
