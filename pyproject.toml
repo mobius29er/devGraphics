@@ -6,16 +6,17 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "devgraphics"
 version = "0.2.0"
-description = "A consistent asset set for your app, from the image generator of your choice."
+description = "Replace the emoji in your product with a consistent set of custom branded graphics, from the image generator of your choice."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.9"
 authors = [{ name = "mobius29er" }]
 keywords = [
-    "icons", "icon-set", "image-generation", "diffusion", "sdxl",
-    "stable-diffusion", "comfyui", "fooocus", "invokeai", "automatic1111",
-    "openai", "gemini", "svg", "design-system", "assets", "cli",
+    "emoji", "graphics", "branding", "illustration", "icons", "icon-set",
+    "image-generation", "diffusion", "sdxl", "stable-diffusion", "comfyui",
+    "fooocus", "invokeai", "automatic1111", "openai", "gemini", "svg",
+    "design-system", "assets", "cli",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",

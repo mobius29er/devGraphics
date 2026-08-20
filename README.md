@@ -1,14 +1,23 @@
 # devGraphics
 
-A consistent asset set for your app, from the image generator of your choice.
+Replace the emoji in your product with custom graphics that are actually yours.
 
-Local image generation is a solved commodity. What you don't have is a way to turn
-"I need 88 consistent icons" into 88 files your build can actually use — with
-alpha, at the right size, named after your components, and still looking like each
-other six months later. devGraphics is that layer.
+Every product ends up with 🔥 and 🚀 standing in for artwork nobody had time to
+make. They render differently on Apple, Google and Windows, they belong to Unicode
+rather than to your brand, and they are the fastest way to make something look
+unfinished. devGraphics turns that list into a coherent set of PNGs and SVGs your
+build can use — with alpha, at the right size, named after your components, and
+still looking like each other six months later.
 
-Point it at a local GPU or a hosted API. The pipeline after the render is the same
-either way, and that pipeline is the product.
+**This is not a UI icon library.** If you need a chevron for a Next button, use
+[Lucide](https://lucide.dev). This is for the branded artwork no library has:
+category graphics, empty states, feature marks, badges, hero art, and the flame
+that should have been yours instead of 🔥.
+
+Local image generation is a solved commodity. Everything *after* the render —
+keying out the backdrop, trimming, sizing, tracing, and keeping 88 of them looking
+like one another — is the part nobody built. That pipeline is the product; point it
+at a local GPU or a hosted API and it behaves the same either way.
 
 **Status: early.** Everything here is documented against measured behaviour,
 including the parts that don't work. Seven backends ship; only the Fooocus path has
@@ -125,25 +134,32 @@ the set's own median and flags the outliers. ~7 ms an icon. It sees colour and
 morphology, **not semantics** — a perfectly on-palette render of the wrong object
 scores clean.
 
-## What works, and what doesn't
+## Your emoji split in two, and so does the pipeline
 
 Measured, not assumed. Full detail in [docs/findings.md](docs/findings.md).
 
-| Subject type | Result |
-| --- | --- |
-| Pictorial objects — flame, target, chart, magnifier, trophy, rocket | **Good.** |
-| Abstract glyphs — check mark, lightning bolt, arrow, X | **Fails.** Generic blobs. |
+| | Examples | How they get made |
+| --- | --- | --- |
+| **Pictorial** | 🔥 🚀 🎯 🏆 💡 🔍 📊 💎 | Generated. Clean and on-style. |
+| **Glyph** | ✔ ⚡ ➡ ✖ ➕ ➖ | **Diffusion cannot draw these.** Authored as SVG. |
 
-SDXL draws *things* well and *symbols* badly. Six retries across three style
+SDXL draws *things* well and *symbols* badly — six retries across three style
 combinations all produced the same striped blob. That subset is small by variety
-and large by usage — in the set that prompted this work, the check mark alone was
-43 of 470 emoji uses.
+and large by volume: in the set that prompted this work, ✔ alone was 43 of 470
+emoji uses.
 
-So `devgraphics glyphs` asks Claude to write the SVG source directly. Hand-authored
-SVG is ~1 KB and inherits `currentColor`; traced SVG is ~29 KB and cannot. It is
-not reproducible — there's no seed and sampling parameters are rejected — so it
-refuses to overwrite an existing glyph without `--force`. Generate once, review,
+So `devgraphics glyphs` asks Claude to write the SVG source directly. That is not
+a gap in the tool, it *is* the second half of the answer — hand-authored SVG is
+~1 KB and inherits `currentColor`, against ~29 KB of traced paths that cannot.
+Between the two commands, every emoji in your product has a route out.
+
+Glyph SVG is not reproducible — there's no seed and sampling parameters are
+rejected — so it refuses to overwrite without `--force`. Generate once, review,
 commit.
+
+**On logos:** this does marks and symbols, not wordmarks. Diffusion models cannot
+render text reliably, which is why the default negative prompt excludes letters
+outright. Set your type in a vector editor and use this for the mark beside it.
 
 **Do the newer hosted models fix abstract glyphs? Unknown, and we don't claim they
 do.** No benchmark isolates symbol fidelity from text rendering.
