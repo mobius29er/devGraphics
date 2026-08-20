@@ -162,6 +162,22 @@ sounding ideal — produced heavy asphalt textures that defeat background remova
 - SVG path simplification (traced output is ~29 KB vs ~1 KB hand-authored)
 - Measuring the abstract-glyph probe across every backend
 
+## Sponsor
+
+devGraphics is free, Apache-2.0, and deliberately has no hosted tier — the whole
+point is that your GPU or your own API key does the work and nothing phones home.
+That leaves no revenue model, only sponsorship.
+
+- [GitHub Sponsors](https://github.com/sponsors/mobius29er)
+- [Ko-fi](https://ko-fi.com/cruxway)
+
+What it buys, in the order it would get spent: GPU hours to actually measure the
+backends that currently ship verified against documentation rather than hardware,
+API credit to run the abstract-glyph probe across every paid backend, and the
+Stability integration that is blocked on nothing but someone being able to `curl`
+its API once. Every result lands in [docs/findings.md](docs/findings.md) the way
+the rest of this project's claims did.
+
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE). It carries an express patent grant

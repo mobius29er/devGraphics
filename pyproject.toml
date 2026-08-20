@@ -52,6 +52,9 @@ dev = ["pytest>=8"]
 
 [project.urls]
 Homepage = "https://github.com/mobius29er/devGraphics"
+Source = "https://github.com/mobius29er/devGraphics"
+Issues = "https://github.com/mobius29er/devGraphics/issues"
+Funding = "https://github.com/sponsors/mobius29er"
 
 [project.scripts]
 devgraphics = "devgraphics.cli:main"
