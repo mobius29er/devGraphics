@@ -235,7 +235,7 @@ def cmd_gen(args):
 
     if args.audit and made:
         print()
-        iconset.audit(made)
+        iconset.audit(made, outdir=outdir)
 
     missing = [s for s in subjects if s not in made and s not in work["hand"]]
     print("\n%d/%d generated -> %s" % (len(made), len(subjects), outdir))
@@ -379,13 +379,8 @@ def cmd_audit(args):
     if not paths:
         raise FileNotFoundError("no PNGs in %s" % icons)
 
-    lock = lockfile.read(args.outdir)
-    shares = None
-    if lock:
-        shares = dict((slug, entry["bg_share"])
-                      for slug, entry in (lock.get("assets") or {}).items()
-                      if entry.get("bg_share") is not None)
-    print(consistency.report(consistency.audit(paths, bg_shares=shares)))
+    print(consistency.report(
+        consistency.audit(paths, bg_shares=iconset.shares(args.outdir))))
     return 0
 
 

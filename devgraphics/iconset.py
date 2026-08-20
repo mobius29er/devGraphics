@@ -203,10 +203,34 @@ def generate(subjects, outdir, size=None, seed=None, host=None, profile=None,
 
 
 def audit(made, outdir=None, log=print):
-    """Run the numeric drift audit over a finished set and print the report."""
-    result = consistency.audit(made)
+    """Run the numeric drift audit over a finished set and print the report.
+
+    `outdir` is where the background shares come from, and passing it is not
+    optional in practice. The 60% floor is the one absolute check the audit has,
+    and it cannot be recovered from a finished icon: the share is measured on the
+    untrimmed square render, and trim_square() has already cropped away the
+    margin it counts. So it lives in the lockfile, and an audit that does not
+    read the lockfile silently runs with its only absolute rule switched off.
+
+    Measured, which is why this reads it: a real seven-icon set came back with
+    two icons under the floor -- a bullseye at 0.34 and a subject the model got
+    wrong at 0.47 -- and the run reported "0 flagged" because the shares never
+    reached the audit.
+    """
+    result = consistency.audit(made, bg_shares=shares(outdir) if outdir else None)
     log(consistency.report(result))
     return result
+
+
+def shares(outdir):
+    """{slug: background share} from a set's lockfile, or None."""
+    lock = lockfile.read(outdir)
+    if not lock:
+        return None
+    found = dict((slug, entry["bg_share"])
+                 for slug, entry in (lock.get("assets") or {}).items()
+                 if entry.get("bg_share") is not None)
+    return found or None
 
 
 def contact_sheet(paths, dest, cell=96, cols=8, bg=(13, 13, 13, 255), label_h=0):
