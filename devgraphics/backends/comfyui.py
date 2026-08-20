@@ -51,12 +51,50 @@ import json
 import urllib.parse
 import uuid
 
-from websocket import (WebSocketException, WebSocketTimeoutException,
-                       create_connection)
-
 from .._http import post_multipart, request_bytes, request_json
 from ..postprocess import to_png
-from .base import BackendError, Capabilities, UnsupportedOption
+from .base import (BackendError, Capabilities, MissingDependency,
+                   UnsupportedOption)
+
+try:
+    from websocket import (WebSocketException, WebSocketTimeoutException,
+                           create_connection)
+    HAVE_WEBSOCKET = True
+except ImportError:                                       # pragma: no cover
+    # websocket-client lives in the `local` extra, because five of the seven
+    # backends never open a socket. Failing here would make `import devgraphics`
+    # and `devgraphics backends` collapse for an OpenAI user who has no reason to
+    # own it, so the module stays importable instead.
+    #
+    # The two exception classes need stand-ins as well as the function: they are
+    # caught by name further down, and a NameError raised while handling a
+    # connection error is the worst possible way to report a missing package.
+    HAVE_WEBSOCKET = False
+
+    class WebSocketException(Exception):
+        pass
+
+    class WebSocketTimeoutException(WebSocketException):
+        pass
+
+    def create_connection(*_args, **_kwargs):
+        raise _no_transport()
+
+
+def _no_transport():
+    return MissingDependency("comfyui", "websocket-client", "local")
+
+
+def _require_transport():
+    """Refuse before any network I/O, not at the socket.
+
+    generate() queues the prompt over HTTP before it ever opens the progress
+    socket, so without this the missing package surfaces as a connection error
+    against a server that was never the problem.
+    """
+    if not HAVE_WEBSOCKET:
+        raise _no_transport()
+
 
 DEFAULT_HOST = "127.0.0.1:8188"
 
@@ -209,6 +247,7 @@ class ComfyUIBackend:
         )
 
     def generate(self, request):
+        _require_transport()
         unknown = sorted(set(request.options) - OPTIONS)
         if unknown:
             raise UnsupportedOption(
@@ -263,6 +302,8 @@ class ComfyUIBackend:
         The rest of the option table is accepted and ignored: nothing about a
         workflow can be confirmed without spending a render.
         """
+        if not HAVE_WEBSOCKET:
+            return False, str(_no_transport())
         try:
             stats = request_json(_url(host, prefix, "/system_stats"),
                                  timeout=PROBE_TIMEOUT, retries=0)

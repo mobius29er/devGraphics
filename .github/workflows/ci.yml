@@ -1,0 +1,164 @@
+name: CI
+
+# Two things this has to prove that a developer machine cannot.
+#
+# The 3.9 and 3.10 rows exercise the tomli backport. On 3.11+ tomllib is stdlib
+# and the fallback in config.py never executes, so without these rows that branch
+# ships to the exact users most likely to reach it, untested.
+#
+# The core-only job installs devgraphics with NO extras -- no websocket-client, no
+# vtracer -- which is what `pip install devgraphics` actually gives someone. The
+# suite simulates that with an import hook; this does it for real.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        include:
+          # The two OSes the project claims parity on. Pinned to 3.13 because
+          # vtracer publishes no macOS wheel below cp311, so a macOS 3.9 row
+          # would be testing pip's Rust toolchain rather than this code.
+          - os: windows-latest
+            python: "3.13"
+          - os: macos-latest
+            python: "3.13"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install with every extra
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,all]"
+
+      - name: Which TOML parser is in play
+        run: |
+          python -c "import devgraphics.config as c, sys; print(sys.version); print('parser:', getattr(c.tomllib, '__name__', None))"
+
+      - name: Test
+        run: python -m pytest tests/ -q
+
+  core-only:
+    name: core install, no extras
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install core only
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+
+      - name: Nothing optional may be present
+        run: |
+          python - <<'PY'
+          import importlib.util, sys
+          for name in ("websocket", "vtracer"):
+              if importlib.util.find_spec(name) is not None:
+                  sys.exit("%s was installed by the core dependency set" % name)
+          print("core install is clean: no websocket-client, no vtracer")
+          PY
+
+      - name: Import and discovery still work
+        run: |
+          python -c "import devgraphics; print(devgraphics.__version__)"
+          devgraphics backends
+          devgraphics backends fooocus --describe
+          devgraphics backends comfyui --describe
+          devgraphics --version
+
+      - name: A local backend explains what to install
+        run: |
+          python - <<'PY'
+          from devgraphics.backends import base
+          from devgraphics.backends.base import MissingDependency, Request
+          backend = base.load("fooocus")
+          try:
+              backend.generate(Request(prompt="a flame", seed=1))
+          except MissingDependency as exc:
+              assert "devgraphics[local]" in str(exc), exc
+              print("fooocus:", str(exc).splitlines()[0])
+          else:
+              raise SystemExit("expected MissingDependency without websocket-client")
+          PY
+
+      - name: SVG tracing explains what to install
+        run: |
+          python - <<'PY'
+          from devgraphics.vectorize import to_svg
+          try:
+              to_svg("nope.png", "nope.svg")
+          except ImportError as exc:
+              assert "devgraphics[svg]" in str(exc), exc
+              print("vectorize:", str(exc).splitlines()[0])
+          else:
+              raise SystemExit("expected ImportError without vtracer")
+          PY
+
+  build:
+    name: build and check the distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Build
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+
+      - name: Check metadata
+        # twine check is what PyPI runs against the long description. A README
+        # it cannot render is rejected at upload, and a version number cannot be
+        # reused, so this failing is far cheaper here than there.
+        run: twine check dist/*
+
+      - name: The workflow templates must be in the wheel
+        run: |
+          python - <<'PY'
+          import glob, zipfile
+          wheel = glob.glob("dist/*.whl")[0]
+          names = zipfile.ZipFile(wheel).namelist()
+          need = ["devgraphics/workflows/sdxl_txt2img.api.json",
+                  "devgraphics/workflows/sdxl_txt2img_rgba.api.json"]
+          missing = [n for n in need if n not in names]
+          if missing:
+              raise SystemExit("wheel is missing package data: %s" % missing)
+          licences = [n for n in names if "/licenses/" in n]
+          if len(licences) < 2:
+              raise SystemExit("wheel is missing LICENSE/NOTICE: %s" % licences)
+          print("wheel ok:", wheel)
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/

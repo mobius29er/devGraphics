@@ -37,19 +37,30 @@ classifiers = [
 # No "Typing :: Typed": only backends/base.py carries annotations, and there is
 # no py.typed marker, so claiming it would be a lie a type checker acts on.
 
-# Seven backends, zero new dependencies. Every hosted backend is stdlib urllib and
-# base64; websocket-client drives Fooocus and ComfyUI; vtracer is only reached by
-# --svg and is imported lazily, so a machine where the Rust wheel will not build
-# can still generate PNGs. tomli disappears on 3.11+, where tomllib is stdlib.
+# Core is Pillow and a TOML parser, and that is the whole of it. Every hosted
+# backend -- OpenAI, Gemini, and anything OpenAI-compatible -- is stdlib urllib
+# and base64, so `pip install devgraphics` installs nothing it will not use.
+# tomli disappears on 3.11+, where tomllib is stdlib.
 dependencies = [
-    "websocket-client>=1.7",
     "pillow>=10",
-    "vtracer>=0.6",
     "tomli>=1.1.0; python_version < '3.11'",
 ]
 
+# Extras rather than core, for two concrete reasons.
+#
+# websocket-client: only Fooocus and ComfyUI open a socket. An OpenAI user has no
+# reason to own it, and a missing transport now reports itself as an actionable
+# MissingDependency at render time rather than breaking `import devgraphics`.
+#
+# vtracer: a Rust wheel, only ever reached by --svg. Its wheel coverage is wide
+# but there is no macOS build below cp311, so on macOS with Python 3.9 or 3.10 pip
+# falls back to compiling it. Making that a hard dependency would fail the whole
+# install for someone who only ever wanted PNGs.
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+local = ["websocket-client>=1.7"]
+svg = ["vtracer>=0.6"]
+all = ["websocket-client>=1.7", "vtracer>=0.6"]
+dev = ["pytest>=8", "websocket-client>=1.7", "vtracer>=0.6"]
 
 [project.urls]
 Homepage = "https://github.com/mobius29er/devGraphics"

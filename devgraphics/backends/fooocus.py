@@ -41,11 +41,40 @@ import os
 import urllib.parse
 import uuid
 
-from websocket import create_connection
-
 from .._http import request_bytes, request_json
 from ..postprocess import to_png
-from .base import BackendError, Capabilities, UnsupportedOption
+from .base import (BackendError, Capabilities, MissingDependency,
+                   UnsupportedOption)
+
+try:
+    from websocket import create_connection
+    HAVE_WEBSOCKET = True
+except ImportError:                                       # pragma: no cover
+    # websocket-client lives in the `local` extra: only Fooocus and ComfyUI open
+    # a socket, and an OpenAI user has no reason to own it. Keeping the module
+    # importable means `devgraphics backends` still lists and describes Fooocus
+    # on a machine that cannot drive it.
+    HAVE_WEBSOCKET = False
+
+    def create_connection(*_args, **_kwargs):
+        raise _no_transport()
+
+
+def _no_transport():
+    return MissingDependency("fooocus", "websocket-client", "local")
+
+
+def _require_transport():
+    """Refuse before any network I/O, not at the socket.
+
+    generate() fetches /config first, so without this the missing package
+    surfaces as "cannot reach 127.0.0.1:7865: connection refused" and sends
+    someone hunting a server that was never the problem. A missing package is
+    deterministic and theirs to fix; an unreachable host might be transient. The
+    deterministic answer has to win.
+    """
+    if not HAVE_WEBSOCKET:
+        raise _no_transport()
 
 GET_TASK = 67
 GENERATE = 68
@@ -315,6 +344,7 @@ class FooocusBackend:
         )
 
     def generate(self, request):
+        _require_transport()
         unknown = sorted(set(request.options) - OPTIONS)
         if unknown:
             raise UnsupportedOption(
@@ -361,11 +391,16 @@ class FooocusBackend:
               performance=None):
         """Reachability and layout, from /config alone. Never renders anything.
 
+        Reports the missing transport before trying the host: answering "up" on a
+        machine that cannot open a socket would be the wrong kind of true.
+
         `styles` and `performance` are accepted so probe() takes the same option
         table as the constructor, and then ignored: Fooocus drops an unknown style
         name silently rather than rejecting it, so nothing about them can be
         confirmed without spending a generation.
         """
+        if not HAVE_WEBSOCKET:
+            return False, str(_no_transport())
         try:
             cfg = Fooocus(host=host, timeout=timeout)._get_json("/config")
         except Exception as exc:
