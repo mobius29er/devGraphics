@@ -95,6 +95,10 @@ class Fooocus:
         self.timeout = timeout
         self._cfg = None
         self._comps = None
+        #: (rank, queue_size) from the last estimation frame, or None. Readable
+        #: by a caller that wants to decide whether waiting is still sensible.
+        self.queue_position = None
+        self._reported_rank = None
 
     # --- plumbing -------------------------------------------------------
 
@@ -159,7 +163,36 @@ class Fooocus:
                 return idx, value
         raise FooocusError("no %s choice containing %r" % (label, needle))
 
+    def _queued(self, msg, on_progress):
+        """Report a queue position, once, and remember it.
+
+        Fooocus renders one image at a time, so waiting behind other work is
+        normal and not an error. A queue that never moves is a different thing
+        entirely, and the two are indistinguishable without this: the client
+        blocks in recv() either way. `queue_position` is left on the instance so
+        a caller that wants to give up can see how far back it is.
+        """
+        rank = msg.get("rank")
+        size = msg.get("queue_size")
+        if rank is None:
+            return
+        self.queue_position = (rank, size)
+        if self._reported_rank == rank:
+            return
+        self._reported_rank = rank
+        eta = msg.get("rank_eta")
+        line = "Fooocus queue: position %s of %s" % (rank + 1, size)
+        if eta:
+            line += ", about %.0fs" % eta
+        line += (". Fooocus renders one at a time; if this does not move, its "
+                 "queue has stalled and it needs restarting.")
+        if on_progress:
+            on_progress({"queue": self.queue_position, "message": line})
+        else:
+            print("  %s" % line)
+
     def _call(self, fn_index, data, session_hash, on_progress=None):
+        self._reported_rank = None
         ws = create_connection("ws://%s/queue/join" % self.host, timeout=self.timeout)
         try:
             while True:
@@ -178,6 +211,15 @@ class Fooocus:
                             }
                         )
                     )
+                elif kind == "estimation":
+                    # Gradio sends this the moment it enqueues us, with our
+                    # position in the queue. Ignoring it is why a jammed Fooocus
+                    # looks exactly like a hung client: measured against a real
+                    # install whose queue had stalled, this frame said
+                    # rank 2 of 3 while the server sat at 0% CPU, and the only
+                    # symptom upstream was fifteen silent minutes. Report it, and
+                    # let the caller decide whether to keep waiting.
+                    self._queued(msg, on_progress)
                 elif kind == "process_generating":
                     if on_progress:
                         on_progress(msg.get("output", {}))

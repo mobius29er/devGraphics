@@ -19,6 +19,7 @@ the reason the client matches those by substring at all.
 """
 
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -444,6 +445,95 @@ class TestProbe(FooocusTestCase):
                                                styles=["Fooocus V2"],
                                                performance="Speed")
         self.assertTrue(ok)
+
+
+class TestQueueVisibility(unittest.TestCase):
+    """Gradio's `estimation` frame, which the client used to drop on the floor.
+
+    Found against a real install, not by reading the code: Fooocus had been up
+    for four hours with a stalled queue, and every client -- this one and the 0.1
+    original -- blocked silently in recv() behind three jammed jobs. The frame
+    that said "rank 2 of 3" was arriving the whole time and nothing looked at it.
+    A waiting client and a wedged server were indistinguishable.
+    """
+
+    def client(self):
+        return fooocus.Fooocus(host="127.0.0.1:7865")
+
+    def test_a_queue_position_is_reported(self):
+        seen = []
+        self.client()._queued(
+            {"rank": 2, "queue_size": 3, "rank_eta": 26.9}, seen.append)
+        self.assertEqual(len(seen), 1)
+        # Human-facing, so one-based: "position 3 of 3", not "rank 2".
+        self.assertIn("position 3 of 3", seen[0]["message"])
+        self.assertIn("27s", seen[0]["message"])
+        self.assertEqual(seen[0]["queue"], (2, 3))
+
+    def test_the_message_says_what_a_stuck_queue_means(self):
+        seen = []
+        self.client()._queued({"rank": 0, "queue_size": 1}, seen.append)
+        self.assertIn("stalled", seen[0]["message"],
+                      "a queue that never moves must not read as normal waiting")
+
+    def test_an_unchanged_position_is_not_repeated(self):
+        """Gradio re-sends estimation frequently; 900 identical lines is noise."""
+        seen = []
+        client = self.client()
+        for _ in range(5):
+            client._queued({"rank": 1, "queue_size": 2}, seen.append)
+        self.assertEqual(len(seen), 1)
+
+    def test_movement_up_the_queue_is_reported(self):
+        seen = []
+        client = self.client()
+        client._queued({"rank": 2, "queue_size": 3}, seen.append)
+        client._queued({"rank": 1, "queue_size": 2}, seen.append)
+        client._queued({"rank": 0, "queue_size": 1}, seen.append)
+        self.assertEqual(len(seen), 3)
+        self.assertEqual(client.queue_position, (0, 1))
+
+    def test_a_frame_without_a_rank_is_ignored(self):
+        seen = []
+        client = self.client()
+        client._queued({"queue_size": 3}, seen.append)
+        self.assertEqual(seen, [])
+        self.assertIsNone(client.queue_position)
+
+    def test_the_estimation_frame_is_handled_in_the_call_loop(self):
+        """The reason all of the above matters: _call must not drop the frame."""
+        client = self.client()
+        frames = [
+            {"msg": "send_hash"},
+            {"msg": "estimation", "rank": 1, "queue_size": 2},
+            {"msg": "send_data"},
+            {"msg": "process_completed", "output": {"data": []}},
+        ]
+        seen = []
+        with mock.patch.object(fooocus, "create_connection",
+                               lambda *a, **k: _Scripted(frames)):
+            client._call(67, [None], "hash", on_progress=seen.append)
+        self.assertTrue(any("queue" in item for item in seen),
+                        "the estimation frame never reached on_progress")
+
+
+class _Scripted(object):
+    """A websocket that replays a fixed list of frames."""
+
+    def __init__(self, frames):
+        self.frames = list(frames)
+        self.sent = []
+
+    def recv(self):
+        if not self.frames:
+            raise AssertionError("client kept reading past the last frame")
+        return json.dumps(self.frames.pop(0))
+
+    def send(self, payload):
+        self.sent.append(json.loads(payload))
+
+    def close(self):
+        pass
 
 
 if __name__ == "__main__":
