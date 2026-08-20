@@ -1,0 +1,106 @@
+name: Publish
+
+# Trusted Publishing (OIDC), so no API token exists to leak or rotate. PyPI is
+# told to trust this repository, this workflow filename and this environment, and
+# mints a short-lived token per run.
+#
+# Setup, once, before the first release -- as a "pending publisher" at
+# https://pypi.org/manage/account/publishing/ (and the same on test.pypi.org):
+#
+#   PyPI project name   devgraphics
+#   Owner               mobius29er
+#   Repository name     devGraphics
+#   Workflow name       publish.yml
+#   Environment name    pypi          (testpypi for the TestPyPI publisher)
+#
+# TestPyPI first, always: run this workflow manually with target=testpypi and
+# install the result in a clean venv. A version number on PyPI is permanent --
+# it can be yanked, never re-uploaded -- so a broken 0.2.0 is a wasted version.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to publish
+        required: true
+        default: testpypi
+        type: choice
+        options: [testpypi, pypi]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Build
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+
+      - name: Check
+        run: twine check dist/*
+
+      - name: The tag must match the version being published
+        # A release tagged v0.3.0 that ships 0.2.0 is unfixable after upload.
+        if: github.event_name == 'release'
+        run: |
+          python - <<'PY'
+          import glob, os, re
+          tag = os.environ["TAG"].lstrip("v")
+          wheel = os.path.basename(glob.glob("dist/*.whl")[0])
+          version = wheel.split("-")[1]
+          if version != tag:
+              raise SystemExit("tag %s does not match built version %s" % (tag, version))
+          print("tag and version agree:", version)
+          PY
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  testpypi:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/devgraphics
+    permissions:
+      id-token: write          # the OIDC token; nothing else is needed
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  pypi:
+    needs: build
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.target == 'pypi')
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/devgraphics
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

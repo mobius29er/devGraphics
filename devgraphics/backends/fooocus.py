@@ -41,11 +41,21 @@ import os
 import urllib.parse
 import uuid
 
-from websocket import create_connection
-
 from .._http import request_bytes, request_json
 from ..postprocess import to_png
-from .base import BackendError, Capabilities, UnsupportedOption
+from .base import (BackendError, Capabilities, MissingDependency,
+                   UnsupportedOption)
+
+try:
+    from websocket import create_connection
+except ImportError:                                       # pragma: no cover
+    # websocket-client lives in the `local` extra: only Fooocus and ComfyUI open
+    # a socket, and an OpenAI user has no reason to own it. Keeping the module
+    # importable means `devgraphics backends` still lists and describes Fooocus
+    # on a machine that cannot drive it, and the stub explains itself at the one
+    # moment it matters -- when a render actually tries to connect.
+    def create_connection(*_args, **_kwargs):
+        raise MissingDependency("fooocus", "websocket-client", "local")
 
 GET_TASK = 67
 GENERATE = 68

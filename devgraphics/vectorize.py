@@ -38,6 +38,9 @@ def to_svg(src, dest, preset="flat", mode="spline"):
     except ImportError as exc:
         raise ImportError(
             "SVG tracing needs the vtracer wheel, which is not installed.\n"
-            "  pip install vtracer     (or drop --svg to write PNG only)") from exc
+            "  pip install devgraphics[svg]   (or: pip install vtracer)\n"
+            "Drop --svg to write PNG only. vtracer is an extra because it is a "
+            "Rust wheel with no macOS build below Python 3.11, and a failed "
+            "compile should not block a PNG-only install.") from exc
     vtracer.convert_image_to_svg_py(src, dest, colormode="color", mode=mode, **PRESETS[preset])
     return dest

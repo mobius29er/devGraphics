@@ -26,12 +26,22 @@ been run against real hardware for a full set.
 ## Install
 
 ```sh
-pip install -e .
+pip install devgraphics            # core: Pillow, and a TOML parser on 3.9/3.10
+pip install devgraphics[local]     # + Fooocus and ComfyUI (websocket-client)
+pip install devgraphics[svg]       # + SVG tracing (vtracer)
+pip install devgraphics[all]       # everything
 ```
 
-Three dependencies, all pure Python except one Rust wheel for tracing, and adding
-six backends added none of them. Every hosted backend is stdlib `urllib` and
-`base64`. Windows, macOS and Linux behave identically.
+Core is Pillow and nothing else, because every hosted backend — OpenAI, Gemini,
+anything OpenAI-compatible — is stdlib `urllib` and `base64`. A missing extra is
+never a traceback; it names itself and the command that fixes it at the moment you
+first need it.
+
+`vtracer` is an extra rather than a dependency for a specific reason: it is a Rust
+wheel with no macOS build below Python 3.11, so on an older macOS interpreter pip
+would try to compile it and fail an install for someone who only ever wanted PNGs.
+
+Windows, macOS and Linux behave identically, and CI runs all three.
 
 ## Use
 

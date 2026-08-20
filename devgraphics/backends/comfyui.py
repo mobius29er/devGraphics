@@ -51,12 +51,28 @@ import json
 import urllib.parse
 import uuid
 
-from websocket import (WebSocketException, WebSocketTimeoutException,
-                       create_connection)
-
 from .._http import post_multipart, request_bytes, request_json
 from ..postprocess import to_png
-from .base import BackendError, Capabilities, UnsupportedOption
+from .base import (BackendError, Capabilities, MissingDependency,
+                   UnsupportedOption)
+
+try:
+    from websocket import (WebSocketException, WebSocketTimeoutException,
+                           create_connection)
+except ImportError:                                       # pragma: no cover
+    # websocket-client lives in the `local` extra, because six of the seven
+    # backends never open a socket. Failing here would make `import devgraphics`
+    # and `devgraphics backends` collapse for an OpenAI user who has no reason to
+    # own it, so the module stays importable and the name is a stub that explains
+    # itself the moment a ComfyUI render actually needs it.
+    class WebSocketException(Exception):
+        pass
+
+    class WebSocketTimeoutException(WebSocketException):
+        pass
+
+    def create_connection(*_args, **_kwargs):
+        raise MissingDependency("comfyui", "websocket-client", "local")
 
 DEFAULT_HOST = "127.0.0.1:8188"
 
