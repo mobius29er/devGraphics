@@ -103,6 +103,10 @@ def build_parser():
                    help="do not write devgraphics.lock.json")
     g.add_argument("--force", action="store_true",
                    help="regenerate assets that already exist")
+    g.add_argument("--only", metavar="SLUG[,SLUG...]",
+                   help="re-render just these subjects, whether or not they "
+                        "exist. The iteration loop: fix one bad prompt fragment "
+                        "without re-running the set.")
     g.add_argument("--audit", action="store_true",
                    help="run the numeric drift audit after generating")
 
@@ -196,7 +200,8 @@ def cmd_gen(args):
     # touch no network, so this costs nothing even with the server down.
     backend = iconset.build(profile)
 
-    work = iconset.plan(subjects, outdir, profile, force=args.force)
+    only = tuple(s.strip() for s in (args.only or "").split(",") if s.strip())
+    work = iconset.plan(subjects, outdir, profile, force=args.force, only=only)
     print(_plan_block(profile, work, outdir))
 
     if args.dry_run:
@@ -213,7 +218,7 @@ def cmd_gen(args):
 
     made = iconset.generate(subjects, outdir, profile=profile,
                             force=args.force, allow_drift=args.allow_drift,
-                            write_lock=not args.no_lock)
+                            write_lock=not args.no_lock, only=only)
 
     svg = profile["output"].get("svg")
     if svg:
