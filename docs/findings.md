@@ -106,6 +106,55 @@ The background-share floor caught one of these on its own — `link` came back a
 frame" with no human looking. It did **not** catch `quill` at 82%, which is the
 limit restated: the audit sees colour and morphology, never semantics.
 
+## The glyph rule is SDXL's, not diffusion's
+
+Measured 2026-08-20 against `openai` / `gpt-image-1-mini`, low quality, $0.005 an
+image. `examples/glyph-probe.json` -- the eight symbols this repo recorded SDXL
+failing -- run twice.
+
+| Subject | SDXL (Fooocus) | gpt-image-1-mini, no anchor | gpt-image-1-mini, `--anchor check` |
+| --- | --- | --- | --- |
+| check, bolt, arrow, cross, plus, minus, bullet, chevron | 0/8 | **8/8 correct** | **0/8 -- all eight came back check marks** |
+
+Two findings, and the second matters more than the first.
+
+**Hosted models do fix abstract glyphs.** Every symbol SDXL could not draw across
+six retries and three style combinations came back correct and on-style, for four
+cents. "Generate things, hand-author symbols" is a fact about SDXL, not about
+diffusion, and the README should no longer imply otherwise. Hand-authored SVG is
+still smaller and still inherits `currentColor`; that argument survives on its own
+merits, and the accuracy argument does not.
+
+**The anchor destroys subject fidelity on weak subjects.** The same eight
+subjects, same model, same scaffold, with `--anchor check` added: all eight
+rendered as check marks. The reference carried the silhouette, not just the
+palette. It is not a general failure -- an earlier run with `--anchor fire`
+produced a correct check mark and correct interlocking links -- so the rule is
+about *semantic distance*: a flame anchoring a check mark leaves room to disagree,
+a check mark anchoring seven other abstract glyphs does not.
+
+That is the documented risk made concrete. docs/backends.md already warns that
+"pushing reference conditioning hard homogenises silhouettes as well as style";
+this is what that looks like when it happens.
+
+**The audit called the broken run perfect.** All eight anchored icons scored
+within tolerance, background shares 70-79%, zero flags -- because they *were*
+consistent. They were consistently the wrong object. This is the stated limit of
+`consistency.py` reproduced exactly: it sees colour and morphology, never
+semantics. Nothing except looking at the contact sheet would have caught it.
+
+Practical rules that follow:
+
+- On a hosted model, try without `--anchor` first. A shared scaffold alone held
+  eight icons together well enough to read as a set.
+- Reserve `--anchor` for pictorial subjects with strong, distinct silhouettes.
+- Look at the sheet. The numbers cannot do this one.
+
+One threshold note: `minus` and `bullet` came back at 56% and 55% background
+share, under the 60% floor, and both are correct. The floor is tuned for a centred
+SDXL render with margin; a glyph that legitimately fills its frame trips it.
+Treat sub-60% as "look at this", which is what it says, not as "wrong".
+
 ## Style selection is counter-intuitive
 
 | Styles | Background | Verdict |

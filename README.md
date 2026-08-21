@@ -171,12 +171,23 @@ commit.
 render text reliably, which is why the default negative prompt excludes letters
 outright. Set your type in a vector editor and use this for the mark beside it.
 
-**Do the newer hosted models fix abstract glyphs? Unknown, and we don't claim they
-do.** No benchmark isolates symbol fidelity from text rendering.
-`examples/glyph-probe.json` holds the eight symbols this repo measured failing —
-run it against any backend in 90 seconds and record the answer.
+**Hosted models do fix abstract glyphs — measured, 2026-08-20.**
+`examples/glyph-probe.json` holds the eight symbols this repo recorded SDXL
+failing. On `openai` / `gpt-image-1-mini` at $0.005 an image, **all eight came back
+correct**: check, bolt, arrow, cross, plus, minus, bullet, chevron. Run it against
+your own backend in 90 seconds; it is four cents and it settles the question.
 
-Until then: **generate things, hand-author symbols.**
+So *generate things, hand-author symbols* is a fact about **SDXL**, not about
+diffusion. On a local backend it still holds. Hand-authored SVG keeps its other
+two advantages regardless — ~1 KB against ~29 KB, and `currentColor` — but you no
+longer have to hand-author glyphs for accuracy alone.
+
+**One trap that came out of the same run:** with `--anchor check`, all eight
+rendered as check marks. The reference carried the silhouette, not just the
+palette. On hosted models try **without** an anchor first — a shared scaffold held
+those eight together on its own — and reserve `--anchor` for pictorial subjects
+with distinct outlines. The audit scored that broken run as flawless, because the
+eight icons *were* perfectly consistent. They were consistently the wrong object.
 
 Style choice also matters more than expected. `Fooocus V2 + Fooocus Sharp` produced
 flat, clean backgrounds. `Sticker Designs` and `Simple Vector Art` — despite

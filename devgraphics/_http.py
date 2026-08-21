@@ -151,14 +151,26 @@ def _detail(exc):
     return str(err)[:400]
 
 
+#: Provider codes that mean "out of money", whatever HTTP status carries them.
+#: OpenAI sends `credit_balance_exhausted` and `insufficient_quota` as 429, which
+#: is indistinguishable from a rate limit by status alone -- and getting that
+#: wrong is expensive in the only currency a batch has. Measured against a real
+#: account with a zero balance: every icon burned its full retry ladder with
+#: backoff, then the loop moved to the next icon and did it again. An 88-icon set
+#: would have spent several minutes discovering the same fact 88 times.
+BROKE = ("credit_balance_exhausted", "insufficient_quota", "billing_hard_limit",
+         "account_deactivated")
+
+
 def _classify(code, detail, headers=None):
     text = "HTTP %d: %s" % (code, detail)
     if "moderation_blocked" in detail or "content_policy" in detail:
         return ModerationBlocked(text + "\n  non-retryable; change the prompt")
     if code in (401, 403):
         return AuthError(text)
-    if code == 402:
-        return PaymentRequired(text + "\n  fatal for the batch, not just this icon")
+    if code == 402 or any(reason in detail for reason in BROKE):
+        return PaymentRequired(text + "\n  fatal for the batch, not just this "
+                                      "icon: retrying cannot create credit")
     if code == 429:
         after = None
         if headers is not None:

@@ -79,6 +79,24 @@ def advisory_model(profile):
     return None
 
 
+def effective(profile):
+    """A profile whose `model` reflects the model actually in play.
+
+    A backend takes its model as an option, so `-O model=gpt-image-1-mini` and
+    `-O checkpoint=sd_xl_base` are both legitimate ways to choose one -- and both
+    used to leave profile["model"] empty. Two things read that field and neither
+    complains when it is blank: pricing.estimate(), which then reports "unknown"
+    for a model it has a published price for, and the lockfile, which then cannot
+    tell that a set was half generated on one model and half on another. Lift it
+    once, here, so both see the same answer however it was spelled.
+    """
+    if profile.get("model"):
+        return profile
+    key = base.MODEL_OPTION.get(profile.get("backend") or "fooocus", "model")
+    named = (profile.get("options") or {}).get(key) if key else None
+    return dict(profile, model=named) if named else profile
+
+
 def plan(subjects, outdir, profile, force=False, only=()):
     """What a run would do, without doing any of it.
 
@@ -91,6 +109,7 @@ def plan(subjects, outdir, profile, force=False, only=()):
     subjects wrong on the first pass, and the fix is a better prompt fragment for
     those subjects, not another twenty minutes for the whole set.
     """
+    profile = effective(profile)
     only = tuple(only or ())
     unknown = [slug for slug in only if slug not in subjects]
     if unknown:
@@ -146,7 +165,8 @@ def generate(subjects, outdir, size=None, seed=None, host=None, profile=None,
     the README and in whatever scripts people already wrote. `profile` is the
     new road: a resolved dict from config.resolve().
     """
-    profile = _profile(profile, size=size, seed=seed, host=host, backend=backend)
+    profile = effective(_profile(profile, size=size, seed=seed, host=host,
+                                 backend=backend))
     outdir = str(outdir)
     made = {}
 
