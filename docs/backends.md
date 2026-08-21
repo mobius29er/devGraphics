@@ -19,7 +19,7 @@ on 2026-08-17, and `gpt-image-2` **removed** the transparency support
 | `comfyui` | yes | yes | yes, with a 444 MB matting model | ControlNet core, IP-Adapter is third-party | any, ×8 | free | medium — needs an API-format graph (we ship one) |
 | `invokeai` | yes | yes | no (3–4 extra nodes) | needs adapter models | any, ×8 | free | very high — hand-built graph, API is unsupported by its maintainers |
 | `a1111` | yes | yes | no | img2img | any | free | low — launch with `--api` |
-| `openai` | **no** | **no** | `gpt-image-1`/`1.5`/`1-mini` only | 16 images via edits | 3 fixed sizes | $0.005–$0.25 | low |
+| `openai` | **no** | **no** | `gpt-image-1`/`1.5`/`1-mini` only, **verified working** | 16 images via edits | 3 fixed sizes | $0.005–$0.25 | low |
 | `gemini` | **no** | **no** | **no, in any model** | ≤3, on one model only | ratio × tier | $0.03–$0.24 | low |
 | `openai-compatible` (Grok, Together, DeepInfra, …) | per-endpoint | per-endpoint | no | no | per-endpoint | varies | low |
 

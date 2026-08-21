@@ -155,6 +155,49 @@ share, under the 60% floor, and both are correct. The floor is tuned for a centr
 SDXL render with margin; a glyph that legitimately fills its frame trips it.
 Treat sub-60% as "look at this", which is what it says, not as "wrong".
 
+### The same model traces terribly
+
+Ten icons, `gpt-image-1-mini`, no anchor: 10/10 subjects correct, including every
+one SDXL failed -- check, cross, warning, interlocking links, a genuinely
+four-pointed sparkle, and a hand holding a pen. Consistent palette and outline
+with no seed and no anchor, from the shared scaffold alone. $0.05 and 2.6 minutes.
+
+Then vtracer, `flat` preset, same settings for both sets:
+
+| | paths | size |
+| --- | --- | --- |
+| Fooocus `chart.svg` | 8 | 27 KB |
+| Fooocus `fire.svg` | 6 | 27 KB |
+| gpt-image-1-mini `chart.svg` | **1174** | **200 KB** |
+| gpt-image-1-mini `check.svg` | **650** | **266 KB** |
+
+Two orders of magnitude, and the cause is visible on the contact sheet: the hosted
+model renders **gradient** fills. Every band in a gradient becomes its own traced
+region. The scaffold does say "solid flat colour fill", but this model has no
+negative prompt to reinforce it with, and it read "sticker" as "shaded sticker".
+
+So the two backends are good at opposite halves of the job:
+
+| | subject accuracy | traces to SVG |
+| --- | --- | --- |
+| SDXL / Fooocus | things only | **excellently** -- 5-11 paths |
+| gpt-image-1-mini | **everything tried** | badly -- 600-1200 paths |
+
+Practical: take PNGs from a hosted model and SVGs from a local one, or push the
+scaffold much harder on flatness before tracing hosted output. And this restores
+the case for `devgraphics glyphs` on its own terms -- a hand-authored check mark
+is ~1 KB against 266 KB traced, and it inherits `currentColor`. That argument was
+never about accuracy; now that accuracy is solved, it is the only argument left,
+and it is a strong one.
+
+### background=transparent is real
+
+Recorded as UNVERIFIED on forum evidence alone. Measured: the raw bytes from
+`gpt-image-1-mini` with `background=transparent` and `output_format=png` carry a
+genuine alpha channel -- `postprocess.has_alpha()` returns True before any cutout
+runs, and `render_bytes()` skips the flood fill entirely. It works headlessly, no
+prompt reinforcement needed.
+
 ## Style selection is counter-intuitive
 
 | Styles | Background | Verdict |
