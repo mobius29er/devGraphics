@@ -108,6 +108,30 @@ def write(outdir, profile_name, profile, assets, environment=None, previous=None
     return p
 
 
+def mark_hand(outdir, entries, profile=None, profile_name=None):
+    """Record slugs as hand-authored, so no later run regenerates them.
+
+    `entries` is {slug: record} from hand() or from glyphs.author().
+
+    This is the only way into hand_slugs(), and without it the whole
+    hand-authored path was unreachable: the lockfile could hold the flag,
+    plan() honoured it, and nothing could set it. The practice this project
+    documents -- generate what a model draws well, author the rest by hand, and
+    never regenerate over the authored ones -- depended on a switch with no
+    handle.
+
+    A lockfile may not exist yet: someone can reasonably author a handful of
+    glyphs before generating anything. The profile is then whatever the caller
+    passes, or the defaults, and the next real run overwrites it.
+    """
+    existing = read(outdir)
+    if profile is None:
+        from .config import DEFAULTS
+        profile = (existing or {}).get("profile") or dict(DEFAULTS)
+    return write(outdir, profile_name or (existing or {}).get("profile_name"),
+                 profile, entries, previous=existing)
+
+
 def compare(existing, profile):
     """Human-readable lines describing how `profile` differs from the lock.
 

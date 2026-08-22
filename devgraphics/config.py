@@ -438,7 +438,13 @@ def to_dict(profile):
     lock reads the way the config reads and diffs the same."""
     out = {}
     for key, value in profile.items():
-        out[key] = "%dx%d" % tuple(value) if key == "render" else _plain(value)
+        if key == "render":
+            # Tolerate an already-serialised "WxH". A profile read back out of a
+            # lockfile and written again -- which is what marking an asset
+            # hand-authored does -- would otherwise try to %d-format a string.
+            out[key] = value if isinstance(value, str) else "%dx%d" % tuple(value)
+        else:
+            out[key] = _plain(value)
     return out
 
 
