@@ -23,7 +23,7 @@ import sys
 from . import config, consistency, iconset, keys, lockfile, pricing
 from .backends import base
 
-VERBS = ("gen", "backends", "init", "audit", "glyphs")
+VERBS = ("gen", "backends", "init", "audit", "glyphs", "hand")
 
 #: argparse dest -> config key. Only these reach config.resolve(); handing over
 #: the whole namespace would push --dry-run and --yes into the profile, into the
@@ -142,6 +142,14 @@ def build_parser():
                    help="overwrite existing glyphs (they are not reproducible)")
     y.add_argument("--probe", action="store_true",
                    help="check credentials and model id only")
+
+    h = sub.add_parser("hand", parents=[common],
+                       help="mark assets hand-authored so no run regenerates them")
+    h.add_argument("slugs", nargs="+", metavar="SLUG")
+    h.add_argument("-o", "--outdir", default="assets")
+    h.add_argument("--file", metavar="PATH",
+                   help="the authored file, when marking a single slug")
+    h.add_argument("--note")
     return p
 
 
@@ -162,7 +170,8 @@ def main(argv=None):
         keys.load_env_file(path)
 
     handler = {"gen": cmd_gen, "backends": cmd_backends, "init": cmd_init,
-               "audit": cmd_audit, "glyphs": cmd_glyphs}[args.verb]
+               "audit": cmd_audit, "glyphs": cmd_glyphs,
+               "hand": cmd_hand}[args.verb]
     try:
         return handler(args)
     except (config.ConfigError, iconset.SetError, base.BackendError,
@@ -405,10 +414,44 @@ def cmd_glyphs(args):
                          outdir=os.path.join(args.outdir, "icons"),
                          force=args.force, **options)
     print("\n%d/%d authored -> %s" % (len(made), len(subjects), args.outdir))
+    if made:
+        # Persist them, or the next `gen` renders a PNG straight over authored
+        # work. glyphs.author() has always returned records marked source="hand";
+        # until now nothing wrote them anywhere.
+        lockfile.mark_hand(args.outdir, made)
     print("SVG from a language model is not reproducible: there is no seed and "
           "sampling parameters are rejected.\nReview these, commit them, and treat "
           "regeneration as a deliberate act (--force).")
     return 0 if len(made) == len(subjects) else 1
+
+
+def cmd_hand(args):
+    """Mark assets as hand-authored, so no later run regenerates them.
+
+    The escape hatch for a subject no model will draw. Measured: three attempts
+    at "a letter i in a circle" came back as a bare vertical stroke every time,
+    because the dot is too small a detail to survive. The answer is four lines of
+    SVG written by a human -- and then a way to tell the tool never to touch it
+    again, which is what this is.
+
+    lockfile already carried hand() and hand_slugs(), and plan() already skipped
+    what they marked. Nothing could set the flag, so the documented practice
+    -- generate what a model draws well, author the rest -- had no handle.
+    """
+    entries = {}
+    single = len(args.slugs) == 1
+    for slug in args.slugs:
+        extra = {"note": args.note} if args.note else {}
+        entries[slug] = lockfile.hand(
+            b"", png=args.file if (args.file and single) else None, **extra)
+    lockfile.mark_hand(args.outdir, entries)
+
+    print("marked hand-authored in %s:" % lockfile.path(args.outdir))
+    for slug in sorted(entries):
+        print("  %s" % slug)
+    print("\n`devgraphics gen` skips these from now on. Delete them from the "
+          "lockfile to undo.")
+    return 0
 
 
 # --- shared -------------------------------------------------------------
