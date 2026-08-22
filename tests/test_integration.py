@@ -10,6 +10,7 @@ profile the next run then reports as drift against itself.
 No network, no GPU, no API key. The fake backends draw with PIL.
 """
 
+import argparse
 import io
 import json
 import os
@@ -327,6 +328,34 @@ class TestStarterConfigs(unittest.TestCase):
                 config.validate(cfg, path)
                 profile = config.resolve(cfg)
                 iconset.build(profile)      # constructs; touches no network
+
+
+class TestCliVerbs(unittest.TestCase):
+    """Every subparser must be listed in VERBS.
+
+    main() prepends "gen" to any first argument that is not a known verb, for
+    0.1 compatibility. A subcommand added to build_parser but not to VERBS is
+    therefore rewritten into `gen <verb> ...` and fails with an argparse error
+    about the wrong parser -- which is exactly what `sheet` did on its first run.
+    """
+
+    def test_every_subparser_is_a_known_verb(self):
+        from devgraphics import cli
+
+        parser = cli.build_parser()
+        actions = [a for a in parser._actions
+                   if isinstance(a, argparse._SubParsersAction)]
+        self.assertEqual(len(actions), 1)
+        for name in actions[0].choices:
+            with self.subTest(verb=name):
+                self.assertIn(name, cli.VERBS)
+
+    def test_every_verb_has_a_handler(self):
+        from devgraphics import cli
+
+        for name in cli.VERBS:
+            with self.subTest(verb=name):
+                self.assertTrue(callable(getattr(cli, "cmd_" + name.replace("-", "_"))))
 
 
 class TestBackendRegistry(unittest.TestCase):

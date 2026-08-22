@@ -23,7 +23,10 @@ import sys
 from . import config, consistency, iconset, keys, lockfile, pricing
 from .backends import base
 
-VERBS = ("gen", "backends", "init", "audit", "glyphs", "hand")
+#: Every subcommand name. A verb missing from here is silently rewritten into
+#: `gen <verb> ...` by the 0.1 compat shim in main(), which then fails with an
+#: unrelated argparse error. Add the name here and in build_parser, or not at all.
+VERBS = ("gen", "backends", "init", "audit", "glyphs", "sheet", "hand")
 
 #: argparse dest -> config key. Only these reach config.resolve(); handing over
 #: the whole namespace would push --dry-run and --yes into the profile, into the
@@ -143,6 +146,16 @@ def build_parser():
     y.add_argument("--probe", action="store_true",
                    help="check credentials and model id only")
 
+    s = sub.add_parser("sheet", parents=[common],
+                       help="rebuild the contact sheet, or one of a subset")
+    s.add_argument("outdir", nargs="?", default="assets")
+    s.add_argument("--only", metavar="SLUG[,SLUG...]",
+                   help="only these icons, in this order -- for reviewing re-rolls")
+    s.add_argument("--cols", type=int, default=8)
+    s.add_argument("--cell", type=int, default=96)
+    s.add_argument("--bg", metavar="HEX", help="background to composite on")
+    s.add_argument("-f", "--dest", help="output path (default OUTDIR/sheet.png)")
+
     h = sub.add_parser("hand", parents=[common],
                        help="mark assets hand-authored so no run regenerates them")
     h.add_argument("slugs", nargs="+", metavar="SLUG")
@@ -171,7 +184,7 @@ def main(argv=None):
 
     handler = {"gen": cmd_gen, "backends": cmd_backends, "init": cmd_init,
                "audit": cmd_audit, "glyphs": cmd_glyphs,
-               "hand": cmd_hand}[args.verb]
+               "hand": cmd_hand, "sheet": cmd_sheet}[args.verb]
     try:
         return handler(args)
     except (config.ConfigError, iconset.SetError, base.BackendError,
@@ -423,6 +436,61 @@ def cmd_glyphs(args):
           "sampling parameters are rejected.\nReview these, commit them, and treat "
           "regeneration as a deliberate act (--force).")
     return 0 if len(made) == len(subjects) else 1
+
+
+def cmd_sheet(args):
+    """Rebuild the contact sheet after the fact, optionally over a subset.
+
+    `--sheet` only ever fired during a run, which is the wrong moment: the sheet
+    is a review tool, and review happens after. Re-rolling three bad icons and
+    then wanting to look at just those three is the normal loop, and there was no
+    way to do it -- the honest evidence being three separate ad-hoc PIL scripts
+    written in one evening to do exactly this.
+
+    The audit sees colour and morphology, never semantics, so a wrong subject
+    scores clean. Looking at the sheet is not decoration; it is the only check
+    that catches it.
+    """
+    icons = os.path.join(args.outdir, "icons")
+    if not os.path.isdir(icons):
+        raise FileNotFoundError("no icons in %s -- generate a set first" % icons)
+
+    found = dict((os.path.splitext(f)[0], os.path.join(icons, f))
+                 for f in sorted(os.listdir(icons)) if f.endswith(".png"))
+    if args.only:
+        wanted = [s.strip() for s in args.only.split(",") if s.strip()]
+        missing = [s for s in wanted if s not in found]
+        if missing:
+            raise FileNotFoundError(
+                "no PNG for %s in %s; it has: %s"
+                % (", ".join(missing), icons, ", ".join(sorted(found))))
+        # Ordered as asked, so a re-roll reads in the order it was re-rolled.
+        found = dict((s, found[s]) for s in wanted)
+    if not found:
+        raise FileNotFoundError("no PNGs in %s" % icons)
+
+    _path, cfg = config.discover(args.config)
+    profile = config.resolve(cfg)
+    bg = _rgba(args.bg or profile.get("bg_hex") or "#0D0D0D")
+    dest = args.dest or os.path.join(args.outdir, "sheet.png")
+
+    iconset.contact_sheet(found, dest, cell=args.cell,
+                          cols=min(args.cols, len(found)), bg=bg)
+    print("%d icon(s) -> %s" % (len(found), dest))
+    return 0
+
+
+def _rgba(value):
+    """#RGB or #RRGGBB to an opaque RGBA tuple."""
+    text = value.lstrip("#")
+    if len(text) == 3:
+        text = "".join(c * 2 for c in text)
+    if len(text) != 6:
+        raise config.ConfigError("background must be #RGB or #RRGGBB, got %r" % value)
+    try:
+        return tuple(int(text[i:i + 2], 16) for i in (0, 2, 4)) + (255,)
+    except ValueError:
+        raise config.ConfigError("background is not valid hex: %r" % value)
 
 
 def cmd_hand(args):
